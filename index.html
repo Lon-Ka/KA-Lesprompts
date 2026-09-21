@@ -58,6 +58,7 @@ select:focus,textarea:focus{outline:none;border-color:var(--a);box-shadow:0 0 0 
 .coverage-note.ok{background:var(--al);border-color:var(--ab);color:var(--at)}
 .coverage-note i{font-size:16px;flex-shrink:0;margin-top:1px}
 .empty-state{text-align:center;padding:28px;color:#AAA;font-size:13px}
+.hint-tekst{text-align:center;font-size:12px;color:#999;margin-top:.6rem}
 .notif{position:fixed;bottom:24px;right:24px;background:var(--a);color:white;padding:10px 18px;border-radius:10px;font-size:13px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:100}
 .notif.on{opacity:1}
 .badge-count{background:rgba(255,255,255,.25);border-radius:10px;padding:1px 8px;font-size:11px;font-weight:700}
@@ -178,7 +179,7 @@ document.addEventListener('DOMContentLoaded', function() {
     <div class="card">
       <div class="ct"><i class="ti ti-file-text"></i>Materiaaltype</div>
       <div class="field">
-        <select id="selMateriaal">
+        <select id="selMateriaal" onchange="onMateriaalChange()">
           <option value="lesmateriaal">Lesmateriaal / lesopzet</option>
           <option value="werkblad">Werkblad</option>
           <option value="toets">Toets</option>
@@ -186,7 +187,14 @@ document.addEventListener('DOMContentLoaded', function() {
           <option value="remediering">Differentiatie — remediëring</option>
         </select>
       </div>
+      <div class="field" id="edi-field" style="display:none">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;font-weight:500;font-size:13px;color:#333">
+          <input type="checkbox" id="chkEdi" style="width:16px;height:16px;accent-color:var(--a)">
+          EDI-lesstructuur toepassen (Expliciete Directe Instructie)
+        </label>
+      </div>
       <button class="btn p full" id="btnGenereer" onclick="genereerPrompts()" disabled><i class="ti ti-wand"></i>Genereer prompts</button>
+      <div id="genereerHint" class="hint-tekst">☝️ Klik hierboven eerst op één van de doel-kaarten om ze te selecteren.</div>
     </div>
 
     <div id="output"></div>
@@ -365,6 +373,7 @@ function renderDoelLijst(){
   S._huidigeLijst = items;
   S.doelSel = null;
   document.getElementById('btnGenereer').disabled = true;
+  document.getElementById('genereerHint').style.display = items.length ? 'block' : 'none';
   document.getElementById('output').innerHTML = '';
   renderCoverageNote();
 }
@@ -373,6 +382,12 @@ function selecteerDoel(i){
   document.querySelectorAll('.doelitem').forEach(el=>el.classList.remove('sel'));
   document.querySelector(`.doelitem[data-i="${i}"]`).classList.add('sel');
   document.getElementById('btnGenereer').disabled = false;
+  document.getElementById('genereerHint').style.display = 'none';
+}
+function onMateriaalChange(){
+  const mat = document.getElementById('selMateriaal').value;
+  document.getElementById('edi-field').style.display = (mat==='lesmateriaal') ? 'block' : 'none';
+  if(mat!=='lesmateriaal') document.getElementById('chkEdi').checked = false;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -438,6 +453,7 @@ function genereerPrompts(){
   const ljLabel = d.leerjaarLabel;
   const niveauLabel = d.niveau==='kleuter' ? 'kleuteronderwijs' : 'lager onderwijs';
   const checkvragen = (d.checkvragen||[]).map(q=>'- '+q).join('\n');
+  const edi = mat==='lesmateriaal' && document.getElementById('chkEdi').checked;
 
   const doelBlok = d.isCheckpoint
     ? `Doel (officieel minimumdoel voor ${ljLabel}): "${d.content}"`
@@ -446,7 +462,40 @@ function genereerPrompts(){
     ? `Doel (officieel): "${d.content}"\nDoel (kindtaal): "${d.ikdoel||d.content}"`
     : `Tussenstap voor ${ljLabel}: "${d.content}"\n(Bouwt toe naar het minimumdoel van ${d.niveau==='kleuter'?'3e kleuterklas':d.checkpointLj+'e leerjaar'}: "${d.checkpointDoelzin}")`;
 
-  const canvaPrompt = `Maak in Canva Magic Studio een ${matLabel} voor ${ljLabel} (${niveauLabel}).
+  let canvaPrompt, tekstPrompt;
+
+  if(edi){
+    canvaPrompt = `Maak in Canva Magic Studio een visueel EDI-lesplanformulier (A4, invulbaar/afdrukbaar) als geheugensteun voor de leerkracht tijdens deze les.
+
+Vak: ${d.vak} — ${d.onderwerp}${d.subthema?' ('+d.subthema+')':''}
+${doelBlok}
+
+Ontwerp een overzichtelijk éénpager-formulier met 6 duidelijk afgebakende vakken/secties, elk met een kort icoon en voldoende invulruimte:
+1. LESDOEL & BELANG — wat leren de leerlingen, en waarom
+2. TERUGBLIK — activeren van voorkennis
+3. ONDERWIJZEN (ik doe) — uitleggen, voordoen, hardop denken + controlerende vragen
+4. BEGELEIDE INOEFENING (wij doen) — samen oefenen, begrip controleren
+5. ZELFSTANDIGE VERWERKING (jij doet) — inclusief ruimte voor "verlengde instructie" voor wie het nog moeilijk vindt
+6. LESAFSLUITING — terugkoppelen naar het lesdoel, korte check
+
+Stijl: rustig en professioneel (geen kleuterstijl), duidelijke typografie, kleurcodering per sectie, A4-formaat geschikt om af te drukken en tijdens de les erbij te houden.`;
+
+    tekstPrompt = `Je bent een ervaren leerkracht ${niveauLabel} in Vlaanderen. Werk een volledige les uit volgens de EDI-methodiek (Expliciete Directe Instructie) voor leerlingen van ${ljLabel}.
+
+Vak: ${d.vak} — ${d.onderwerp}${d.subthema?' ('+d.subthema+')':''}
+${doelBlokTekst}
+${checkvragen ? '\nMogelijke controlerende vragen om doorheen de les te verwerken:\n'+checkvragen+'\n' : ''}
+Structureer de les volgens de 6 EDI-fasen, en werk elke fase concreet uit:
+1. Lesdoel & belang van de les — wat leren de leerlingen en waarom is dit nuttig
+2. Terugblik — hoe activeer je de voorkennis
+3. Onderwijzen ("ik doe") — uitleggen, voordoen, hardop denken (modeling), met controlerende vragen
+4. Begeleide inoefening ("wij doen") — samen oefenen; hoe controleer je of iedereen het begrijpt; eventueel coöperatieve werkvorm
+5. Zelfstandige verwerking ("jij doet") — wat doen de leerlingen alleen; voorzie ook kort "verlengde instructie" voor wie het doel nog niet beheerst
+6. Lesafsluiting — hoe koppel je terug naar het lesdoel en check je kort of het gelukt is
+
+Schrijf in het Nederlands, aangepast aan het niveau van ${ljLabel}. Gebruik een duidelijke opbouw met kopjes per fase.`;
+  } else {
+    canvaPrompt = `Maak in Canva Magic Studio een ${matLabel} voor ${ljLabel} (${niveauLabel}).
 
 Vak: ${d.vak} — ${d.onderwerp}${d.subthema?' ('+d.subthema+')':''}
 ${doelBlok}
@@ -458,7 +507,7 @@ Ontwerp:
 - Zorg voor voldoende witruimte en een duidelijke, leesbare opmaak
 - ${MATERIAAL_CANVA_HINT[mat]}`;
 
-  const tekstPrompt = `Je bent een ervaren leerkracht ${niveauLabel} in Vlaanderen. Maak een ${matLabel} voor leerlingen van ${ljLabel}.
+    tekstPrompt = `Je bent een ervaren leerkracht ${niveauLabel} in Vlaanderen. Maak een ${matLabel} voor leerlingen van ${ljLabel}.
 
 Vak: ${d.vak} — ${d.onderwerp}${d.subthema?' ('+d.subthema+')':''}
 ${doelBlokTekst}
@@ -466,6 +515,7 @@ ${checkvragen ? '\nMogelijke reflectievragen om in te verwerken:\n'+checkvragen+
 ${MATERIAAL_TEKST_HINT[mat]}
 
 Schrijf in het Nederlands, aangepast aan het niveau van ${ljLabel}. Gebruik een duidelijke opbouw met kopjes.`;
+  }
 
   document.getElementById('output').innerHTML = `
     <div class="promptcard">
